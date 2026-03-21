@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ALPR — Live Camera</title>
+<style>
+:root {
+  --bg: #0a0c10;
+  --surface: #111520;
+  --border: #1e2535;
+  --accent: #00e5ff;
+  --green: #00ff88;
+  --red: #ff4d6d;
+  --muted: #4a5568;
+  --text: #cbd5e0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  min-height: 100vh;
+  padding: 32px 24px;
+}
+
+/* ── Nav ── */
+nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.nav-btn:hover { border-color: var(--accent); color: var(--text); }
+.nav-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0,229,255,0.07);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 20px;
+}
+.logo {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, var(--accent), #0066ff);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+}
+h1 { font-size: 1.5rem; font-weight: 700; color: #fff; letter-spacing: 0.05em; }
+h1 span { color: var(--accent); }
+.subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+.live-badge {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.75rem;
+  color: var(--red);
+  background: rgba(255,77,109,0.1);
+  border: 1px solid rgba(255,77,109,0.25);
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.live-dot-red {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red);
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.75); }
+}
+
+/* ── Layout ── */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+}
+
+/* ── Camera feed ── */
+.feed-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.feed-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.feed-title {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+}
+.feed-title::before {
+  content:'';
+  display: inline-block;
+  width: 3px; height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.feed-meta { font-size: 0.72rem; color: var(--muted); }
+
+.camera-wrapper {
+  position: relative;
+  width: 100%;
+  background: #000;
+  aspect-ratio: 16/9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#camera-stream {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.stream-overlay {
+  position: absolute;
+  top: 12px; left: 12px;
+  display: flex; gap: 8px;
+}
+.overlay-badge {
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  letter-spacing: 0.06em;
+  backdrop-filter: blur(4px);
+}
+.overlay-badge.rec {
+  color: var(--red);
+  border-color: rgba(255,77,109,0.3);
+}
+
+.offline-placeholder {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+.offline-placeholder .icon { font-size: 2.5rem; opacity: 0.4; }
+
+/* ── Sidebar ── */
+.sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+}
+.card-title {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.card-title::before {
+  content:'';
+  display: inline-block;
+  width: 3px; height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ── Recent plates sidebar list ── */
+.plate-list { display: flex; flex-direction: column; gap: 10px; }
+.plate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  transition: border-color 0.2s;
+}
+.plate-row:hover { border-color: var(--accent); }
+.plate-tag {
+  font-family: ui-monospace, monospace;
+  font-size: 0.88rem;
+  color: var(--accent);
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.2);
+  padding: 3px 10px;
+  border-radius: 5px;
+  letter-spacing: 0.1em;
+}
+.plate-time { font-size: 0.72rem; color: var(--muted); }
+
+.empty { color: var(--muted); font-size: 0.82rem; text-align: center; padding: 12px 0; }
+
+/* ── Status card ── */
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.status-row:last-child { border-bottom: none; padding-bottom: 0; }
+.status-label { color: var(--muted); }
+.status-value { color: #fff; font-weight: 500; }
+.status-value.ok { color: var(--green); }
+.status-value.err { color: var(--red); }
+
+/* ── Fullscreen button ── */
+.fullscreen-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.fullscreen-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-btn">📊 Dashboard</a>
+  <a href="/camera" class="nav-btn active">📷 Live Camera</a>
+</nav>
+
+<header>
+  <div class="logo">📷</div>
+  <div>
+    <h1>Live <span>Camera</span></h1>
+    <div class="subtitle">Real-time MJPEG stream from Raspberry Pi</div>
+  </div>
+  <div class="live-badge"><div class="live-dot-red"></div> LIVE</div>
+</header>
+
+<div class="layout">
+
+  <!-- Camera feed -->
+  <div class="feed-card">
+    <div class="feed-header">
+      <div class="feed-title">Camera Feed</div>
+      <button class="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    </div>
+    <div class="camera-wrapper" id="camera-wrapper">
+      <img id="camera-stream" src="/video_feed" alt="Live camera feed"
+           onload="onStreamLoad()" onerror="onStreamError()"/>
+      <div class="stream-overlay">
+        <span class="overlay-badge rec" id="rec-badge">● REC</span>
+        <span class="overlay-badge" id="res-badge">Loading...</span>
+      </div>
+      <div class="offline-placeholder" id="offline-msg">
+        <div class="icon">📵</div>
+        <div>Camera stream unavailable</div>
+        <div style="font-size:0.75rem">Make sure plate_detector.py is running</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+
+    <!-- Stream status -->
+    <div class="card">
+      <div class="card-title">Stream Status</div>
+      <div class="status-row">
+        <span class="status-label">Feed</span>
+        <span class="status-value" id="st-feed">Connecting...</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Source</span>
+        <span class="status-value">/video_feed</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Refresh</span>
+        <span class="status-value ok">MJPEG stream</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Last plate</span>
+        <span class="status-value" id="st-last">—</span>
+      </div>
+    </div>
+
+    <!-- Recent plates -->
+    <div class="card">
+      <div class="card-title">Recent Detections</div>
+      <div class="plate-list" id="recent-plates">
+        <div class="empty">Waiting for detections...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Stream health ─────────────────────────────────────────────────────────────
+function onStreamLoad() {
+  document.getElementById('st-feed').textContent = 'Online';
+  document.getElementById('st-feed').className = 'status-value ok';
+  document.getElementById('offline-msg').style.display = 'none';
+  document.getElementById('rec-badge').style.display = '';
+  document.getElementById('res-badge').textContent = 'Live';
+}
+
+function onStreamError() {
+  document.getElementById('st-feed').textContent = 'Offline';
+  document.getElementById('st-feed').className = 'status-value err';
+  document.getElementById('offline-msg').style.display = 'flex';
+  document.getElementById('rec-badge').style.display = 'none';
+  document.getElementById('res-badge').textContent = 'No signal';
+  // Retry after 5s
+  setTimeout(() => {
+    const img = document.getElementById('camera-stream');
+    img.src = '/video_feed?' + Date.now();
+  }, 5000);
+}
+
+// ── Fullscreen ────────────────────────────────────────────────────────────────
+function toggleFullscreen() {
+  const wrapper = document.getElementById('camera-wrapper');
+  if (!document.fullscreenElement) {
+    wrapper.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+// ── Recent plates from plates_log.json ────────────────────────────────────────
+async function loadRecent() {
+  try {
+    const res = await fetch('/plates_log.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return;
+
+    const recent = [...data].reverse().slice(0, 8);
+
+    // Update last plate in status card
+    document.getElementById('st-last').textContent = recent[0]?.plate || '—';
+
+    document.getElementById('recent-plates').innerHTML = recent.map(d => {
+      const ts = typeof d.timestamp === 'string' ? d.timestamp.replace('T',' ').slice(11,19) : '';
+      return `<div class="plate-row">
+        <span class="plate-tag">${d.plate}</span>
+        <span class="plate-time">${ts}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    // silently fail — dashboard page shows errors
+  }
+}
+
+loadRecent();
+setInterval(loadRecent, 5000);
+</script>
+</body>
+</html>

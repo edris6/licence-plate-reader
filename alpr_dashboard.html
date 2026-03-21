@@ -5,251 +5,223 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>ALPR Dashboard</title>
 <style>
-  :root {
-    --bg:      #0a0c10;
-    --surface: #111520;
-    --border:  #1e2535;
-    --accent:  #00e5ff;
-    --green:   #00ff88;
-    --muted:   #4a5568;
-    --text:    #cbd5e0;
-  }
+:root {
+  --bg: #0a0c10;
+  --surface: #111520;
+  --border: #1e2535;
+  --accent: #00e5ff;
+  --green: #00ff88;
+  --muted: #4a5568;
+  --text: #cbd5e0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  min-height: 100vh;
+  padding: 32px 24px;
+}
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Nav ── */
+nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.nav-btn:hover { border-color: var(--accent); color: var(--text); }
+.nav-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0,229,255,0.07);
+}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    min-height: 100vh;
-    padding: 32px 24px;
-  }
-
-  header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 40px;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 20px;
-  }
-
-  .logo {
-    width: 44px; height: 44px;
-    background: linear-gradient(135deg, var(--accent), #0066ff);
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px;
-  }
-
-  h1 { font-size: 1.5rem; font-weight: 700; color: #fff; letter-spacing: 0.05em; }
-  h1 span { color: var(--accent); }
-  .subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
-
-  .live-dot {
-    margin-left: auto;
-    display: flex; align-items: center; gap: 8px;
-    font-size: 0.75rem; color: var(--green);
-  }
-  .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--green);
-    animation: pulse 1.5s infinite;
-  }
-  @keyframes pulse {
-    0%,100% { opacity: 1; transform: scale(1); }
-    50%      { opacity: 0.4; transform: scale(0.8); }
-  }
-
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
-
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 22px;
-  }
-  .card.wide { grid-column: 1 / -1; }
-
-  .card-title {
-    font-size: 0.7rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: var(--muted);
-    margin-bottom: 18px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .card-title::before {
-    content:'';
-    display: inline-block;
-    width: 3px; height: 14px;
-    background: var(--accent);
-    border-radius: 2px;
-  }
-
-  /* Stats row */
-  .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-  .stat {
-    flex: 1; min-width: 100px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-  }
-  .stat-val {
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: #fff;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  }
-  .stat-lbl { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
-
-  /* Table */
-  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-  th {
-    text-align: left;
-    font-size: 0.65rem; letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    padding: 0 0 10px;
-    border-bottom: 1px solid var(--border);
-  }
-  td { padding: 10px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
-  tr:last-child td { border-bottom: none; }
-
-  .plate-tag {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 0.9rem;
-    color: var(--accent);
-    background: rgba(0,229,255,0.08);
-    border: 1px solid rgba(0,229,255,0.2);
-    padding: 3px 10px;
-    border-radius: 5px;
-    letter-spacing: 0.1em;
-  }
-
-  .conf-bar { display: flex; align-items: center; gap: 8px; }
-  .bar-bg {
-    flex: 1; height: 4px;
-    background: var(--border);
-    border-radius: 99px;
-    overflow: hidden;
-  }
-  .bar-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--green));
-    border-radius: 99px;
-  }
-  .conf-val { font-size: 0.75rem; color: var(--muted); width: 36px; text-align: right; }
-
-  .freq-badge {
-    display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(0,255,136,0.1);
-    color: var(--green);
-    border-radius: 99px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 2px 10px;
-    min-width: 36px;
-  }
-
-  /* Thumbnail */
-  .thumb {
-    width: 80px; height: 28px;
-    object-fit: cover;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    transition: transform 0.15s, border-color 0.15s;
-  }
-  .thumb:hover { transform: scale(1.08); border-color: var(--accent); }
-  .no-img { font-size: 0.7rem; color: var(--muted); font-style: italic; }
-
-  /* Lightbox */
-  #lightbox {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.85);
-    z-index: 999;
-    align-items: center; justify-content: center;
-    flex-direction: column; gap: 16px;
-  }
-  #lightbox.open { display: flex; }
-  #lightbox img { max-width: 90vw; max-height: 80vh; border-radius: 10px; border: 2px solid var(--accent); }
-  #lightbox-close {
-    color: var(--muted); font-size: 0.85rem; cursor: pointer;
-    padding: 8px 20px; border: 1px solid var(--border);
-    border-radius: 8px; background: var(--surface);
-  }
-  #lightbox-close:hover { color: #fff; border-color: var(--accent); }
-  #lightbox-label {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    color: var(--accent);
-    font-size: 1rem;
-  }
-
-  /* Live status */
-  .upload-area {
-    border: 2px dashed var(--border);
-    border-radius: 10px;
-    padding: 28px;
-    cursor: default;
-    transition: border-color 0.2s;
-  }
-  .upload-area:hover { border-color: var(--border); }
-  .status-area {
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    text-align: left;
-  }
-  .status-icon { font-size: 2rem; }
-  .status-copy { display: grid; gap: 6px; }
-  .status-head { font-size: 0.95rem; color: #fff; font-weight: 600; }
-  .upload-area p { color: var(--muted); font-size: 0.85rem; }
-  #file-info { font-size: 0.8rem; color: var(--accent); }
-  #file-info[data-state="ok"] { color: var(--green); }
-  #file-info[data-state="error"] { color: #ff8b8b; }
-
-  .empty { color: var(--muted); font-size: 0.85rem; padding: 16px 0; text-align: center; }
-  .time  { color: var(--muted); font-size: 0.78rem; }
-
-  /* Gallery */
-  .gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 12px;
-    margin-top: 4px;
-  }
-  .gallery-item {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: border-color 0.2s, transform 0.15s;
-  }
-  .gallery-item:hover { border-color: var(--accent); transform: translateY(-2px); }
-  .gallery-item img {
-    width: 100%; height: 90px;
-    object-fit: cover; display: block;
-  }
-  .gallery-item .gi-label {
-    padding: 8px 10px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 0.78rem;
-    color: var(--accent);
-  }
-  .gallery-item .gi-time {
-    padding: 0 10px 8px;
-    font-size: 0.68rem;
-    color: var(--muted);
-  }
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 40px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 20px;
+}
+.logo {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, var(--accent), #0066ff);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+}
+h1 { font-size: 1.5rem; font-weight: 700; color: #fff; letter-spacing: 0.05em; }
+h1 span { color: var(--accent); }
+.subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.live-dot {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.75rem; color: var(--green);
+}
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+}
+.card.wide { grid-column: 1 / -1; }
+.card-title {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 18px;
+  display: flex; align-items: center; gap: 8px;
+}
+.card-title::before {
+  content:'';
+  display: inline-block;
+  width: 3px; height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.stat {
+  flex: 1; min-width: 100px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.stat-val {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #fff;
+  font-family: ui-monospace, monospace;
+}
+.stat-lbl { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th {
+  text-align: left;
+  font-size: 0.65rem; letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+td { padding: 10px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+.plate-tag {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+  color: var(--accent);
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.2);
+  padding: 3px 10px;
+  border-radius: 5px;
+  letter-spacing: 0.1em;
+}
+.conf-bar { display: flex; align-items: center; gap: 8px; }
+.bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 99px; }
+.conf-val { font-size: 0.75rem; color: var(--muted); width: 36px; text-align: right; }
+.freq-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(0,255,136,0.1);
+  color: var(--green);
+  border-radius: 99px;
+  font-size: 0.75rem; font-weight: 700;
+  padding: 2px 10px; min-width: 36px;
+}
+.thumb {
+  width: 80px; height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.thumb:hover { transform: scale(1.08); border-color: var(--accent); }
+.no-img { font-size: 0.7rem; color: var(--muted); font-style: italic; }
+#lightbox {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 999;
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px;
+}
+#lightbox.open { display: flex; }
+#lightbox img { max-width: 90vw; max-height: 80vh; border-radius: 10px; border: 2px solid var(--accent); }
+#lightbox-close {
+  color: var(--muted); font-size: 0.85rem; cursor: pointer;
+  padding: 8px 20px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface);
+}
+#lightbox-close:hover { color: #fff; border-color: var(--accent); }
+#lightbox-label { font-family: ui-monospace, monospace; color: var(--accent); font-size: 1rem; }
+.status-area { display: flex; align-items: center; gap: 18px; }
+.status-icon { font-size: 2rem; }
+.status-copy { display: grid; gap: 6px; }
+.status-head { font-size: 0.95rem; color: #fff; font-weight: 600; }
+.upload-area { border: 2px dashed var(--border); border-radius: 10px; padding: 28px; }
+.upload-area p { color: var(--muted); font-size: 0.85rem; }
+#file-info { font-size: 0.8rem; color: var(--accent); }
+#file-info[data-state="ok"] { color: var(--green); }
+#file-info[data-state="error"] { color: #ff8b8b; }
+.empty { color: var(--muted); font-size: 0.85rem; padding: 16px 0; text-align: center; }
+.time { color: var(--muted); font-size: 0.78rem; }
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px; margin-top: 4px;
+}
+.gallery-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.gallery-item:hover { border-color: var(--accent); transform: translateY(-2px); }
+.gallery-item img { width: 100%; height: 90px; object-fit: cover; display: block; }
+.gallery-item .gi-label {
+  padding: 8px 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem; color: var(--accent);
+}
+.gallery-item .gi-time { padding: 0 10px 8px; font-size: 0.68rem; color: var(--muted); }
 </style>
 </head>
 <body>
+
+<nav>
+  <a href="/" class="nav-btn active">📊 Dashboard</a>
+  <a href="/camera" class="nav-btn">📷 Live Camera</a>
+</nav>
 
 <header>
   <div class="logo">🚗</div>
@@ -268,8 +240,6 @@
 </div>
 
 <div class="grid">
-
-  <!-- Local server status -->
   <div class="card wide">
     <div class="card-title">Local WiFi Sync</div>
     <div class="upload-area status-area">
@@ -282,27 +252,22 @@
     </div>
   </div>
 
-  <!-- Recent detections -->
   <div class="card">
     <div class="card-title">Recent Detections</div>
     <div id="recent-body"><div class="empty">Waiting for live plate data...</div></div>
   </div>
 
-  <!-- Top plates -->
   <div class="card">
     <div class="card-title">Top Plates (Frequency)</div>
     <div id="freq-body"><div class="empty">Frequency stats will appear here automatically</div></div>
   </div>
 
-  <!-- Image Gallery -->
   <div class="card wide">
     <div class="card-title">Capture Gallery</div>
     <div id="gallery-body"><div class="empty">Saved captures will appear here automatically</div></div>
   </div>
-
 </div>
 
-<!-- Lightbox -->
 <div id="lightbox">
   <div id="lightbox-label"></div>
   <img id="lightbox-img" src="" alt="capture"/>
@@ -323,39 +288,25 @@ function processData(entries) {
   render();
 }
 
-function formatTimestamp(timestamp) {
-  return typeof timestamp === 'string'
-    ? timestamp.replace('T', ' ').slice(0, 19)
-    : 'Unknown time';
+function formatTimestamp(ts) {
+  return typeof ts === 'string' ? ts.replace('T', ' ').slice(0, 19) : 'Unknown time';
 }
 
 function getTodayKey() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 }
 
 async function loadData() {
   try {
     const res = await fetch('/plates_log.json', { cache: 'no-store' });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const entries = await res.json();
     processData(entries);
-
     const stamp = new Date().toLocaleTimeString();
-    if (data.length) {
-      setStatus(`Synced ${data.length} detections at ${stamp}`, 'ok');
-    } else {
-      setStatus(`Connected locally • waiting for first detection • ${stamp}`, 'ok');
-    }
+    setStatus(data.length ? `Synced ${data.length} detections at ${stamp}` : `Connected • waiting for first detection • ${stamp}`, 'ok');
   } catch (err) {
-    console.error('Failed to load plate data:', err);
-    setStatus('Unable to reach the local server. Retrying automatically...', 'error');
+    setStatus('Unable to reach the local server. Retrying...', 'error');
   }
 }
 
@@ -364,6 +315,7 @@ function openLightbox(src, label) {
   document.getElementById('lightbox-label').textContent = label;
   document.getElementById('lightbox').classList.add('open');
 }
+
 document.getElementById('lightbox-close').addEventListener('click', () => {
   document.getElementById('lightbox').classList.remove('open');
 });
@@ -375,11 +327,10 @@ document.getElementById('lightbox').addEventListener('click', e => {
 function getImageSrc(entry) {
   const rawPath = entry.image_full || entry.image_crop;
   if (!rawPath) return null;
-
   const normalizedPath = rawPath.replace(/\\/g, '/').replace(/^\.?\//, '');
   const match = normalizedPath.match(/(?:^|\/)(plate_images\/.+)$/);
   const relativePath = match ? match[1] : normalizedPath;
-  return `/${relativePath.split('/').map(encodeURIComponent).join('/')}`;
+  return '/' + relativePath.split('/').map(encodeURIComponent).join('/');
 }
 
 function render() {
@@ -387,27 +338,21 @@ function render() {
   const today = getTodayKey();
   const todayCount = data.filter(d => typeof d.timestamp === 'string' && d.timestamp.startsWith(today)).length;
   const unique = [...new Set(data.map(d => d.plate))].length;
-  const confValues = data.map(d => Number(d.confidence)).filter(conf => Number.isFinite(conf));
-  const avgConf = total && confValues.length
-    ? (confValues.reduce((sum, conf) => sum + conf, 0) / confValues.length).toFixed(2)
-    : '0.00';
+  const confValues = data.map(d => Number(d.confidence)).filter(Number.isFinite);
+  const avgConf = confValues.length ? (confValues.reduce((s,c) => s+c, 0) / confValues.length).toFixed(2) : '0.00';
 
-  document.getElementById('s-total').textContent  = total;
+  document.getElementById('s-total').textContent = total;
   document.getElementById('s-unique').textContent = unique;
-  document.getElementById('s-today').textContent  = todayCount;
-  document.getElementById('s-avg').textContent    = avgConf;
+  document.getElementById('s-today').textContent = todayCount;
+  document.getElementById('s-avg').textContent = avgConf;
 
   if (!total) {
-    document.getElementById('recent-body').innerHTML =
-      `<div class="empty">Waiting for the first plate detection...</div>`;
-    document.getElementById('freq-body').innerHTML =
-      `<div class="empty">Plate frequency will appear after detections are logged</div>`;
-    document.getElementById('gallery-body').innerHTML =
-      `<div class="empty">Saved captures from <strong>plate_images/</strong> will appear here automatically</div>`;
+    document.getElementById('recent-body').innerHTML = `<div class="empty">Waiting for the first plate detection...</div>`;
+    document.getElementById('freq-body').innerHTML = `<div class="empty">Plate frequency will appear after detections are logged</div>`;
+    document.getElementById('gallery-body').innerHTML = `<div class="empty">Saved captures from <strong>plate_images/</strong> will appear here automatically</div>`;
     return;
   }
 
-  // Recent table
   const recent = [...data].reverse().slice(0, 15);
   document.getElementById('recent-body').innerHTML = `
     <table>
@@ -423,8 +368,8 @@ function render() {
             <td class="time">${formatTimestamp(d.timestamp)}</td>
             <td>
               <div class="conf-bar">
-                <div class="bar-bg"><div class="bar-fill" style="width:${Number(d.confidence || 0) * 100}%"></div></div>
-                <span class="conf-val">${(Number(d.confidence || 0) * 100).toFixed(0)}%</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:${Number(d.confidence||0)*100}%"></div></div>
+                <span class="conf-val">${(Number(d.confidence||0)*100).toFixed(0)}%</span>
               </div>
             </td>
             <td>${imgCell}</td>
@@ -433,7 +378,6 @@ function render() {
       </tbody>
     </table>`;
 
-  // Frequency
   const freq = {};
   data.forEach(d => freq[d.plate] = (freq[d.plate]||0) + 1);
   const sorted = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,10);
@@ -451,11 +395,9 @@ function render() {
       </tbody>
     </table>`;
 
-  // Gallery
   const withImages = [...data].reverse().filter(d => getImageSrc(d));
-  if (withImages.length === 0) {
-    document.getElementById('gallery-body').innerHTML =
-      `<div class="empty">Saved captures are not available yet for these detections</div>`;
+  if (!withImages.length) {
+    document.getElementById('gallery-body').innerHTML = `<div class="empty">Saved captures are not available yet</div>`;
   } else {
     document.getElementById('gallery-body').innerHTML = `
       <div class="gallery">
