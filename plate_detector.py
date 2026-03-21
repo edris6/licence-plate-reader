@@ -134,14 +134,16 @@ def save_plate(conn, plate: str, confidence: float, frame, roi, x, y, w, h):
     }
     logs = []
     if Path(LOG_PATH).exists():
-        with open(LOG_PATH) as f:
+        with open(LOG_PATH, encoding="utf-8") as f:
             try:
                 logs = json.load(f)
             except json.JSONDecodeError:
                 logs = []
     logs.append(entry)
-    with open(LOG_PATH, "w") as f:
+    temp_log_path = Path(f"{LOG_PATH}.tmp")
+    with open(temp_log_path, "w", encoding="utf-8") as f:
         json.dump(logs, f, indent=2)
+    temp_log_path.replace(LOG_PATH)
 
     print(f"[{ts[11:19]}]  ✅  NEW ARRIVAL  {plate}  (conf: {confidence:.2f})  📸 {full_path.name}")
 
