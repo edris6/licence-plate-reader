@@ -414,9 +414,11 @@ def main():
                         save_plate(conn, clean, conf, frame, roi, x, y, w, h)
                         box_color  = (0, 255, 0)
                         label_text = f"NEW: {clean}"
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🆕 NEW PLATE    → {clean} (conf: {conf:.2f})")
                     else:
                         box_color  = (200, 200, 0)
                         label_text = f"PARKED: {clean}"
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🅿️  STILL PARKED → {clean}")
 
                     cv2.rectangle(display, (x, y), (x+w, y+h), box_color, 2)
                     cv2.putText(display, label_text,
