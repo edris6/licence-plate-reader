@@ -2,15 +2,18 @@
 ALPR - Automatic Licence Plate Recognition
 Webcam source | Saves to SQLite + JSON + Images | Displays live feed
 Parked car logic: logs each plate once; re-logs only after it disappears
-Flask web server included — serves dashboard + live MJPEG stream over WiFi
+Flask web server — serves dashboard + live MJPEG camera stream over WiFi
+Requirements: pip install opencv-python pytesseract flask
+              sudo apt install tesseract-ocr -y
 """
 
 import cv2
-import easyocr
+import pytesseract
 import sqlite3
 import json
 import re
 import threading
+import socket
 from datetime import datetime
 from pathlib import Path
 
@@ -21,17 +24,19 @@ from flask import Flask, jsonify, send_from_directory, Response
 DB_PATH     = "plates.db"
 LOG_PATH    = "plates_log.json"
 IMAGES_DIR  = Path("plate_images")
-FRAME_SKIP  = 5       # process every Nth frame
-MIN_CONF    = 0.4     # minimum OCR confidence
+FRAME_SKIP  = 5      # process every Nth frame
 PLATE_REGEX = r"[A-Z0-9]{2,8}"
 FLASK_PORT  = 5000
 
+# Tesseract: single line mode, alphanumeric only
+TESS_CONFIG = "--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
 BASE_DIR = str(Path(__file__).parent)
 
-# ── Shared frame (camera → Flask) ────────────────────────────────────────────
+# ── Shared frame (camera → Flask) ─────────────────────────────────────────────
 
 _frame_lock   = threading.Lock()
-_latest_frame = None   # raw BGR frame, updated every capture loop
+_latest_frame = None
 
 def set_latest_frame(frame):
     global _latest_frame
@@ -50,6 +55,10 @@ app = Flask(__name__)
 def index():
     return send_from_directory(BASE_DIR, "alpr_dashboard.html")
 
+@app.route("/camera")
+def camera_page():
+    return send_from_directory(BASE_DIR, "camera.html")
+
 @app.route("/plates_log.json")
 def plates_log():
     path = Path(LOG_PATH)
@@ -61,8 +70,11 @@ def plates_log():
         except json.JSONDecodeError:
             return jsonify([])
 
+@app.route("/plate_images/<path:filename>")
+def plate_image(filename):
+    return send_from_directory(str(IMAGES_DIR), filename)
+
 def _generate_mjpeg():
-    """Yield MJPEG frames from the shared latest frame."""
     while True:
         frame = get_latest_frame()
         if frame is None:
@@ -77,10 +89,6 @@ def _generate_mjpeg():
             + b"\r\n"
         )
 
-@app.route("/camera")
-def camera():
-    return send_from_directory(BASE_DIR, "camera.html")
-
 @app.route("/video_feed")
 def video_feed():
     return Response(
@@ -89,12 +97,20 @@ def video_feed():
     )
 
 def start_flask():
-    """Run Flask in a background daemon thread."""
     app.run(host="0.0.0.0", port=FLASK_PORT, debug=False, use_reloader=False)
 
 # ── Parked car tracker ────────────────────────────────────────────────────────
 
 class ParkedCarTracker:
+    """
+    Presence-based parked car logic:
+    1. Plate appears → log it, mark as PRESENT
+    2. Plate still here next frame(s) → ignore
+    3. Plate disappears from frame → mark as GONE
+    4. Plate appears again → log it again (step 1), repeat
+    No timers. No timeouts. Just: is it in this frame or not?
+    """
+
     def __init__(self):
         self._present_this_frame: set = set()
         self._parked:             set = set()
@@ -143,7 +159,7 @@ def init_db():
     conn.commit()
     return conn
 
-def save_plate(conn, plate, confidence, frame, roi, x, y, w, h):
+def save_plate(conn, plate: str, confidence: float, frame, roi, x, y, w, h):
     ts      = datetime.now().isoformat()
     safe_ts = ts.replace(":", "-").replace(".", "-")
 
@@ -211,14 +227,14 @@ def preprocess(frame):
     return cv2.bilateralFilter(gray, 11, 17, 17)
 
 def find_plate_regions(frame):
-    proc     = preprocess(frame)
-    edges    = cv2.Canny(proc, 30, 200)
+    proc        = preprocess(frame)
+    edges       = cv2.Canny(proc, 30, 200)
     contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
+    contours    = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
 
     regions = []
     for c in contours:
-        peri  = cv2.arcLength(c, True)
+        peri   = cv2.arcLength(c, True)
         approx = cv2.approxPolyDP(c, 0.018 * peri, True)
         if len(approx) == 4:
             x, y, w, h = cv2.boundingRect(approx)
@@ -230,11 +246,30 @@ def is_valid_plate(text: str) -> bool:
     text = text.upper().replace(" ", "")
     return bool(re.match(PLATE_REGEX, text)) and len(text) >= 4
 
+def ocr_plate(roi):
+    """Run Tesseract on a plate ROI. Returns (cleaned_text, confidence 0-1)."""
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, (gray.shape[1]*3, gray.shape[0]*3),
+                      interpolation=cv2.INTER_CUBIC)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    text = pytesseract.image_to_string(thresh, config=TESS_CONFIG).strip()
+
+    try:
+        data  = pytesseract.image_to_data(thresh, config=TESS_CONFIG,
+                                          output_type=pytesseract.Output.DICT)
+        confs = [int(c) for c in data["conf"]
+                 if str(c).lstrip("-").isdigit() and int(c) >= 0]
+        conf  = (sum(confs) / len(confs) / 100.0) if confs else 0.0
+    except Exception:
+        conf = 1.0
+
+    return text.upper().replace(" ", ""), conf
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def main():
     conn    = init_db()
-    reader  = easyocr.Reader(["en"], gpu=False)
     cap     = cv2.VideoCapture(0)
     tracker = ParkedCarTracker()
 
@@ -242,19 +277,18 @@ def main():
         print("❌ Cannot open webcam.")
         return
 
-    import socket
     try:
         local_ip = socket.gethostbyname(socket.gethostname())
     except Exception:
         local_ip = "raspberrypi.local"
 
-    # Start Flask in background thread
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
 
     print(f"🚗 ALPR running — press Q to quit")
-    print(f"🌐 Dashboard → http://{local_ip}:{FLASK_PORT}")
-    print(f"📷 Live feed  → http://{local_ip}:{FLASK_PORT}/video_feed\n")
+    print(f"🌐 Dashboard  → http://{local_ip}:{FLASK_PORT}")
+    print(f"📷 Camera     → http://{local_ip}:{FLASK_PORT}/camera")
+    print(f"📡 Video feed → http://{local_ip}:{FLASK_PORT}/video_feed\n")
 
     frame_count = 0
 
@@ -270,27 +304,25 @@ def main():
             regions = find_plate_regions(frame)
 
             for (x, y, w, h) in regions:
-                roi     = frame[y:y+h, x:x+w]
-                results = reader.readtext(roi)
+                roi        = frame[y:y+h, x:x+w]
+                clean, conf = ocr_plate(roi)
 
-                for (_, text, conf) in results:
-                    clean = text.upper().replace(" ", "")
-                    if conf < MIN_CONF or not is_valid_plate(clean):
-                        continue
+                if not is_valid_plate(clean):
+                    continue
 
-                    is_new = tracker.see(clean)
-                    if is_new:
-                        save_plate(conn, clean, conf, frame, roi, x, y, w, h)
-                        box_color  = (0, 255, 0)
-                        label_text = f"NEW: {clean}"
-                    else:
-                        box_color  = (200, 200, 0)
-                        label_text = f"PARKED: {clean}"
+                is_new = tracker.see(clean)
+                if is_new:
+                    save_plate(conn, clean, conf, frame, roi, x, y, w, h)
+                    box_color  = (0, 255, 0)   # green = new arrival
+                    label_text = f"NEW: {clean}"
+                else:
+                    box_color  = (200, 200, 0)  # yellow = already parked
+                    label_text = f"PARKED: {clean}"
 
-                    cv2.rectangle(display, (x, y), (x+w, y+h), box_color, 2)
-                    cv2.putText(display, label_text,
-                                (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                                0.65, box_color, 2)
+                cv2.rectangle(display, (x, y), (x+w, y+h), box_color, 2)
+                cv2.putText(display, label_text,
+                            (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.65, box_color, 2)
 
             tracker.end_frame()
 
@@ -312,7 +344,6 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 0), 1)
             bottom_y += 17
 
-        # Push annotated frame to Flask stream
         set_latest_frame(display)
 
         cv2.imshow("ALPR — Press Q to quit", display)

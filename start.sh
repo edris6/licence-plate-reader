@@ -7,7 +7,7 @@ source venv/bin/activate
 
 echo "Starting ALPR..."
 echo "Dashboard  → http://$(hostname -I | awk '{print $1}'):5000"
-echo "Live feed  → http://$(hostname -I | awk '{print $1}'):5000/video_feed"
+echo "Camera     → http://$(hostname -I | awk '{print $1}'):5000/camera"
 echo "Press Ctrl+C to stop."
 echo ""
 
