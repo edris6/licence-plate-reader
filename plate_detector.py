@@ -71,7 +71,7 @@ def capture_nikon():
         "--set-config", "autofocusdrive=1"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    time.sleep(0.4)  # wait for focus to settle
+    time.sleep(0.55)  # wait for focus to settle
 
     # Then capture
     result = subprocess.run([
