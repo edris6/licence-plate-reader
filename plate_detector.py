@@ -64,7 +64,16 @@ def kill_gvfs():
     time.sleep(0.5)
 
 def capture_nikon():
-    """Capture a single frame from the Nikon via gphoto2. Returns BGR frame or None."""
+    """Autofocus then capture a single frame from the Nikon via gphoto2."""
+    # Trigger autofocus first
+    subprocess.run([
+        "gphoto2",
+        "--set-config", "autofocusdrive=1"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    time.sleep(0.4)  # wait for focus to settle
+
+    # Then capture
     result = subprocess.run([
         "gphoto2",
         "--capture-image-and-download",
@@ -73,8 +82,7 @@ def capture_nikon():
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     if Path(CAPTURE_PATH).exists():
-        frame = cv2.imread(CAPTURE_PATH)
-        return frame
+        return cv2.imread(CAPTURE_PATH)
     return None
 
 # ── Shared frame (camera → Flask) ─────────────────────────────────────────────
