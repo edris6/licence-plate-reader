@@ -50,7 +50,7 @@ Camera → Frame Capture → Preprocessing → Edge Detection
 Frames are captured depending on selected backend:
 
 * Pi Camera → Picamera2
-* USB Camera → OpenCV (VideoCapture)
+* USB Camera → OpenCV (`cv2.VideoCapture`)
 * Nikon → gphoto2 still capture
 
 ---
@@ -132,8 +132,8 @@ Each detection is saved to:
 # 📁 Project Structure
 
 ```text
-plate_detector.py      # Main application
-start.sh               # Startup script
+plate_detector.py      # Main application (camera + OCR + server)
+start.sh               # Startup script (auto-selects Python + camera)
 requirements.txt       # Python dependencies
 
 alpr_dashboard.html    # Dashboard UI
@@ -152,7 +152,7 @@ plate_images/          # Saved images
 
 ### 1. Raspberry Pi Camera (Recommended)
 
-* Uses **Picamera2 (libcamera)**
+* Uses **Picamera2 (libcamera stack)**
 * Required for Pi Camera v2 / v3
 * Best performance on Raspberry Pi
 
@@ -166,7 +166,7 @@ rpicam-hello
 
 ### 2. USB Camera
 
-* Uses OpenCV:
+Uses OpenCV:
 
 ```python
 cv2.VideoCapture(0)
@@ -264,16 +264,73 @@ python plate_detector.py -select
 
 ---
 
+# ⚠️ IMPORTANT — Raspberry Pi Camera + Virtual Environments
+
+This is the **most common issue on Raspberry Pi**.
+
+Picamera2 is installed via:
+
+```bash
+sudo apt install python3-picamera2
+```
+
+This installs it **system-wide**, not inside your virtual environment.
+
+### Symptom
+
+```bash
+python3 works
+venv/bin/python fails with:
+ModuleNotFoundError: No module named 'picamera2'
+```
+
+### Why
+
+Your venv cannot see system-installed packages.
+
+---
+
+## ✅ Solutions
+
+### Option 1 (Recommended)
+
+Let `start.sh` automatically fall back to system Python.
+
+---
+
+### Option 2
+
+Recreate venv with system packages:
+
+```bash
+rm -rf venv
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+---
+
+### Option 3
+
+Run without venv:
+
+```bash
+python3 plate_detector.py
+```
+
+---
+
 # 🌐 Web Interface
 
 Once running, access:
 
-| Feature     | URL                                 |
-| ----------- | ----------------------------------- |
-| Dashboard   | http://<pi-ip>:5000                 |
-| Camera View | http://<pi-ip>:5000/camera          |
-| Live Feed   | http://<pi-ip>:5000/video_feed      |
-| JSON Log    | http://<pi-ip>:5000/plates_log.json |
+| Feature   | URL                                 |
+| --------- | ----------------------------------- |
+| Dashboard | http://<pi-ip>:5000                 |
+| Camera    | http://<pi-ip>:5000/camera          |
+| Live Feed | http://<pi-ip>:5000/video_feed      |
+| JSON Log  | http://<pi-ip>:5000/plates_log.json |
 
 ---
 
@@ -282,8 +339,6 @@ Once running, access:
 ## SQLite Database
 
 File: `plates.db`
-
-Schema:
 
 ```sql
 CREATE TABLE plates (
@@ -301,8 +356,6 @@ CREATE TABLE plates (
 ## JSON Log
 
 File: `plates_log.json`
-
-Example:
 
 ```json
 {
@@ -346,34 +399,53 @@ FLASK_PORT = 5000
 
 # ⚡ Performance Notes
 
-| Camera Type | Speed  | Notes                 |
-| ----------- | ------ | --------------------- |
-| Pi Camera   | Fast   | Best option           |
-| USB Camera  | Medium | Stable                |
-| Nikon       | Slow   | High quality but slow |
+| Camera Type | Speed  | Notes              |
+| ----------- | ------ | ------------------ |
+| Pi Camera   | Fast   | Best option        |
+| USB Camera  | Medium | Stable             |
+| Nikon       | Slow   | High quality, slow |
 
 ---
 
 # 🧪 Troubleshooting
 
-## Pi camera works in `rpicam-hello` but not Python
+## ❌ No camera detected
+
+Run:
 
 ```bash
-sudo apt install python3-picamera2
+./start.sh -select
 ```
+
+and test manually.
 
 ---
 
-## No camera detected
+## Pi camera works in `rpicam-hello` but not in script
+
+```bash
+python3 -c "from picamera2 import Picamera2; print(Picamera2.global_camera_info())"
+```
+
+If that works → issue is your Python environment (see section above).
+
+---
+
+## USB camera not detected
 
 ```bash
 ls /dev/video*
-gphoto2 --auto-detect
 ```
 
 ---
 
-## Nikon not accessible
+## Nikon not detected
+
+```bash
+gphoto2 --auto-detect
+```
+
+If busy:
 
 ```bash
 sudo killall gvfs-gphoto2-volume-monitor gvfsd-gphoto2 gvfsd
@@ -381,28 +453,12 @@ sudo killall gvfs-gphoto2-volume-monitor gvfsd-gphoto2 gvfsd
 
 ---
 
-## OCR is inaccurate
+## OCR inaccurate
 
 * Improve lighting
 * Increase contrast
-* Adjust camera angle
 * Ensure plate fills frame
-
----
-
-## Virtual environment cannot see Picamera2
-
-Either:
-
-```bash
-sudo apt install python3-picamera2
-```
-
-or recreate venv with system packages:
-
-```bash
-python3 -m venv --system-site-packages venv
-```
+* Avoid motion blur
 
 ---
 
@@ -464,6 +520,6 @@ https://github.com/edris6/licence-plate-reader
 Extended with:
 
 * Multi-camera support
-* Pi camera (Picamera2)
+* Pi camera (Picamera2 integration)
 * Improved runtime handling
 * Web streaming improvements

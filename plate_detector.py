@@ -113,10 +113,13 @@ def detect_nikon():
         lines = result.stdout.strip().splitlines()
         for line in lines[2:]:
             if line.strip():
-                print(f"📷 Nikon/gphoto2 camera detected: {line.strip()}")
+                print(f"Nikon check: detected -> {line.strip()}")
                 return True
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Nikon check failed: {e}")
+        return False
+
+    print("Nikon check: not detected")
     return False
 
 
@@ -156,11 +159,15 @@ def capture_nikon():
 
 def detect_pi_camera():
     if Picamera2 is None:
+        print("Pi camera check: picamera2 import failed")
         return False
+
     try:
         info = Picamera2.global_camera_info()
+        print(f"Pi camera check: {info}")
         return bool(info)
-    except Exception:
+    except Exception as e:
+        print(f"Pi camera check failed: {e}")
         return False
 
 
@@ -185,6 +192,7 @@ def detect_usb_camera(index=0):
         ret, _ = cap.read()
         ok = bool(ret)
     cap.release()
+    print(f"USB camera check (/dev/video{index}): {ok}")
     return ok
 
 
@@ -203,11 +211,17 @@ def build_usb_camera(index=0):
 
 
 def auto_select_camera():
-    if detect_pi_camera():
+    pi_ok = detect_pi_camera()
+    usb_ok = detect_usb_camera(0)
+    nikon_ok = detect_nikon()
+
+    print(f"Auto-detect results -> pi={pi_ok}, usb={usb_ok}, nikon={nikon_ok}")
+
+    if pi_ok:
         return "pi"
-    if detect_usb_camera(0):
+    if usb_ok:
         return "usb"
-    if detect_nikon():
+    if nikon_ok:
         return "nikon"
     return None
 
