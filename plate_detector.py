@@ -1,10 +1,11 @@
 """
 ALPR - Automatic Licence Plate Recognition
-Webcam source | Saves to SQLite + JSON + Images | Displays live feed
+Camera source: Nikon D90 via gphoto2 (falls back to webcam if not found)
+Saves to SQLite + JSON + Images | Headless (no display required)
 Parked car logic: logs each plate once; re-logs only after it disappears
-Flask web server — serves dashboard + live MJPEG camera stream over WiFi
-Requirements: pip install opencv-python pytesseract flask
-              sudo apt install tesseract-ocr -y
+Flask web server — serves dashboard + live MJPEG stream over local WiFi
+Requirements: pip install opencv-python-headless pytesseract flask
+              sudo apt install tesseract-ocr gphoto2 -y
 """
 
 import cv2
@@ -14,6 +15,8 @@ import json
 import re
 import threading
 import socket
+import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -21,17 +24,66 @@ from flask import Flask, jsonify, send_from_directory, Response
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-DB_PATH     = "plates.db"
-LOG_PATH    = "plates_log.json"
-IMAGES_DIR  = Path("plate_images")
-FRAME_SKIP  = 5      # process every Nth frame
-PLATE_REGEX = r"[A-Z0-9]{2,8}"
-FLASK_PORT  = 5000
+DB_PATH        = "plates.db"
+LOG_PATH       = "plates_log.json"
+IMAGES_DIR     = Path("plate_images")
+FRAME_SKIP     = 3       # process every Nth frame (lower = more accurate, slower)
+PLATE_REGEX    = r"[A-Z0-9]{2,8}"
+FLASK_PORT     = 5000
+CAPTURE_PATH   = "/tmp/alpr_latest.jpg"   # temp file for gphoto2 captures
 
 # Tesseract: single line mode, alphanumeric only
 TESS_CONFIG = "--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 BASE_DIR = str(Path(__file__).parent)
+
+# ── Camera mode detection ─────────────────────────────────────────────────────
+
+def detect_nikon():
+    """Returns True if a gphoto2-compatible camera is connected."""
+    try:
+        result = subprocess.run(
+            ["gphoto2", "--auto-detect"],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = result.stdout.strip().splitlines()
+        # Skip header lines, look for actual device entries
+        for line in lines[2:]:
+            if line.strip():
+                print(f"📷 Camera detected: {line.strip()}")
+                return True
+    except Exception:
+        pass
+    return False
+
+def kill_gvfs():
+    """Kill gvfs processes that block gphoto2 access."""
+    for proc in ["gvfs-gphoto2-volume-monitor", "gvfsd-gphoto2", "gvfsd"]:
+        subprocess.run(["sudo", "killall", proc],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.5)
+
+def capture_nikon():
+    """Autofocus then capture a single frame from the Nikon via gphoto2."""
+    # Trigger autofocus first
+    subprocess.run([
+        "gphoto2",
+        "--set-config", "autofocusdrive=1"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    time.sleep(0.55)  # wait for focus to settle
+
+    # Then capture
+    result = subprocess.run([
+        "gphoto2",
+        "--capture-image-and-download",
+        "--filename", CAPTURE_PATH,
+        "--force-overwrite"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    if Path(CAPTURE_PATH).exists():
+        return cv2.imread(CAPTURE_PATH)
+    return None
 
 # ── Shared frame (camera → Flask) ─────────────────────────────────────────────
 
@@ -78,8 +130,9 @@ def _generate_mjpeg():
     while True:
         frame = get_latest_frame()
         if frame is None:
+            time.sleep(0.05)
             continue
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         if not ok:
             continue
         yield (
@@ -266,23 +319,51 @@ def ocr_plate(roi):
 
     return text.upper().replace(" ", ""), conf
 
+# ── HUD overlay ───────────────────────────────────────────────────────────────
+
+def draw_hud(display, conn, tracker):
+    y_pos = 20
+    cv2.putText(display, f"ALPR | parked: {tracker.count()}", (10, y_pos),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
+    y_pos += 25
+
+    for plate, ts, _ in get_history(conn, 5):
+        cv2.putText(display, f"{plate} {ts[11:19]}", (10, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (180, 180, 180), 1)
+        y_pos += 17
+
+    parked_now = tracker.current_parked()
+    bottom_y   = display.shape[0] - 10 - len(parked_now) * 17
+    for p in parked_now:
+        cv2.putText(display, f"● {p}", (10, bottom_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 0), 1)
+        bottom_y += 17
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def main():
     conn    = init_db()
-    cap     = cv2.VideoCapture(0)
-    #camera defaulting
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-    cap.set(cv2.CAP_PROP_FPS, 30)
-    #
     tracker = ParkedCarTracker()
 
-    if not cap.isOpened():
-        print("❌ Cannot open webcam.")
-        return
+    # ── Detect camera source ──────────────────────────────────────────────────
+    kill_gvfs()
+    use_nikon = detect_nikon()
 
+    if use_nikon:
+        print("📷 Using Nikon D90 via gphoto2")
+        cap = None
+    else:
+        print("📹 Nikon not found — falling back to webcam")
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        if not cap.isOpened():
+            print("❌ Cannot open webcam either. Exiting.")
+            return
+
+    # ── Start Flask ───────────────────────────────────────────────────────────
     try:
         local_ip = socket.gethostbyname(socket.gethostname())
     except Exception:
@@ -291,84 +372,82 @@ def main():
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
 
-    print(f"🚗 ALPR running — press Q to quit")
+    print(f"🚗 ALPR running — press Ctrl+C to quit")
     print(f"🌐 Dashboard  → http://{local_ip}:{FLASK_PORT}")
     print(f"📷 Camera     → http://{local_ip}:{FLASK_PORT}/camera")
     print(f"📡 Video feed → http://{local_ip}:{FLASK_PORT}/video_feed\n")
 
     frame_count = 0
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        frame_count += 1
-        display = frame.copy()
-
-        if frame_count % FRAME_SKIP == 0:
-            regions = find_plate_regions(frame)
-
-            for (x, y, w, h) in regions:
-                roi        = frame[y:y+h, x:x+w]
-                clean, conf = ocr_plate(roi)
-
-                if not is_valid_plate(clean):
+    try:
+        while True:
+            # ── Grab frame ───────────────────────────────────────────────────
+            if use_nikon:
+                frame = capture_nikon()
+                if frame is None:
+                    print("⚠️  Nikon capture failed, retrying...")
+                    time.sleep(0.5)
+                    continue
+            else:
+                ret, frame = cap.read()
+                if not ret:
+                    print("⚠️  Webcam read failed, retrying...")
+                    time.sleep(0.1)
                     continue
 
-                is_new = tracker.see(clean)
-                if is_new:
-                    save_plate(conn, clean, conf, frame, roi, x, y, w, h)
-                    box_color  = (0, 255, 0)   # green = new arrival
-                    label_text = f"NEW: {clean}"
-                else:
-                    box_color  = (200, 200, 0)  # yellow = already parked
-                    label_text = f"PARKED: {clean}"
+            frame_count += 1
+            display = frame.copy()
 
-                cv2.rectangle(display, (x, y), (x+w, y+h), box_color, 2)
-                cv2.putText(display, label_text,
-                            (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.65, box_color, 2)
+            # ── Detection every FRAME_SKIP frames ────────────────────────────
+            if frame_count % FRAME_SKIP == 0:
+                regions = find_plate_regions(frame)
 
-            tracker.end_frame()
+                for (x, y, w, h) in regions:
+                    roi        = frame[y:y+h, x:x+w]
+                    clean, conf = ocr_plate(roi)
 
-        # ── HUD ───────────────────────────────────────────────────────────────
-        y_pos = 20
-        cv2.putText(display, f"ALPR | parked: {tracker.count()}", (10, y_pos),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
-        y_pos += 25
+                    if not is_valid_plate(clean):
+                        continue
 
-        for plate, ts, _ in get_history(conn, 5):
-            cv2.putText(display, f"{plate} {ts[11:19]}", (10, y_pos),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (180, 180, 180), 1)
-            y_pos += 17
+                    is_new = tracker.see(clean)
+                    if is_new:
+                        save_plate(conn, clean, conf, frame, roi, x, y, w, h)
+                        box_color  = (0, 255, 0)
+                        label_text = f"NEW: {clean}"
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🆕 NEW PLATE    → {clean} (conf: {conf:.2f})")
+                    else:
+                        box_color  = (200, 200, 0)
+                        label_text = f"PARKED: {clean}"
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🅿️  STILL PARKED → {clean}")
 
-        parked_now = tracker.current_parked()
-        bottom_y   = display.shape[0] - 10 - len(parked_now) * 17
-        for p in parked_now:
-            cv2.putText(display, f"● {p}", (10, bottom_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 0), 1)
-            bottom_y += 17
+                    cv2.rectangle(display, (x, y), (x+w, y+h), box_color, 2)
+                    cv2.putText(display, label_text,
+                                (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.65, box_color, 2)
 
-        set_latest_frame(display)
+                tracker.end_frame()
 
-        #cv2.imshow("ALPR — Press Q to quit", display)
-        #if cv2.waitKey(1) & 0xFF == ord("q"):
-       #     break
+            # ── HUD + push to stream ──────────────────────────────────────────
+            draw_hud(display, conn, tracker)
+            set_latest_frame(display)
 
-    cap.release()
-    #cv2.destroyAllWindows()
+    except KeyboardInterrupt:
+        print("\n🛑 Stopping ALPR...")
 
-    print("\n── Parked cars still present at exit ────")
-    for p in tracker.current_parked():
-        print(f"  {p}")
+    finally:
+        if cap:
+            cap.release()
 
-    print("\n── Top arrivals ─────────────────────────")
-    for plate, freq in get_frequency(conn):
-        print(f"  {plate:<12} x{freq} arrival(s)")
+        print("\n── Parked cars still present at exit ────")
+        for p in tracker.current_parked():
+            print(f"  {p}")
 
-    print(f"\n💾 {DB_PATH}  📄 {LOG_PATH}  📸 {IMAGES_DIR}/")
-    conn.close()
+        print("\n── Top arrivals ─────────────────────────")
+        for plate, freq in get_frequency(conn):
+            print(f"  {plate:<12} x{freq} arrival(s)")
+
+        print(f"\n💾 {DB_PATH}  📄 {LOG_PATH}  📸 {IMAGES_DIR}/")
+        conn.close()
 
 
 if __name__ == "__main__":
